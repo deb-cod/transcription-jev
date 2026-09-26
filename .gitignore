@@ -1,0 +1,15 @@
+.env
+.pytest_cache/
+__pycache__/
+*.py[cod]
+*.log
+.coverage
+htmlcov/
+venv/
+models/
+tmp/
+vendor/openjev/bin/
+vendor/openjev/models/
+vendor/openjev/third_party/
+vendor/openjev/tmp/
+vendor/openjev/

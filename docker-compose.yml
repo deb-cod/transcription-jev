@@ -1,0 +1,13 @@
+services:
+  classifier-api:
+    build: .
+    environment:
+      OPENJEV_URL: http://host.docker.internal:8090
+      ENABLE_CONFIG_RELOAD: "false"
+    volumes:
+      - ./config:/app/config:ro
+    ports:
+      - "8000:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+

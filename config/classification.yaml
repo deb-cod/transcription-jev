@@ -1,0 +1,124 @@
+version: 1
+
+openjev:
+  url: http://127.0.0.1:8090
+  method: direct
+  request_timeout_seconds: 120
+
+transcript:
+  max_total_characters: 200000
+  chunking:
+    enabled: true
+    # Conservative for OpenJev's committed 2048-token llama.cpp context.
+    # Prompt instructions and label definitions also consume context tokens.
+    max_characters: 4000
+    overlap_characters: 400
+    preserve_speaker_turns: true
+
+aggregation:
+  default:
+    strategy: confidence_powered_average
+    minimum_chunk_weight: 0.05
+    confidence_power: 8.0
+    introductory_chunk_boost: 1.0
+  healthcare_related:
+    strategy: positive_evidence_max
+    positive_label: "yes"
+  caller_type:
+    strategy: confidence_powered_average
+    minimum_chunk_weight: 0.05
+    confidence_power: 8.0
+    introductory_chunk_boost: 1.25
+
+classifications:
+  healthcare_related:
+    enabled: true
+    type: binary
+    description: >
+      Based only on the transcript, determine whether the caller or call
+      context appears to be healthcare-related. Do not assume healthcare
+      when evidence is insufficient.
+    threshold: 0.60
+    labels:
+      "yes":
+        description: Caller or conversation is clearly related to healthcare or medicine.
+      "no":
+        description: Caller and conversation are clearly unrelated to healthcare or medicine.
+
+  caller_type:
+    enabled: true
+    type: choice
+    description: Determine what kind of person or organization is calling.
+    threshold: 0.60
+    labels:
+      doctor_office:
+        description: Physician, specialist, physician group or doctor's office.
+      hospital:
+        description: Hospital, medical center, emergency department, inpatient facility or hospital department.
+      clinic:
+        description: Outpatient clinic, urgent care, specialty clinic, rehabilitation clinic or similar facility.
+      pharmacy:
+        description: Retail, specialty, hospital, or mail-order pharmacy.
+      insurance_company:
+        description: Health insurer, payer, health plan, benefits administrator or insurance representative.
+      laboratory:
+        description: Diagnostic or pathology laboratory, imaging facility or testing facility.
+      medical_equipment_provider:
+        description: Durable medical equipment supplier or medical equipment provider.
+      nursing_or_home_health:
+        description: Nursing facility, skilled nursing facility, hospice or home healthcare organization.
+      patient_or_family:
+        description: Patient, relative, caregiver or personal representative.
+      other_healthcare:
+        description: Healthcare-related caller that does not match another category.
+      non_healthcare:
+        description: Clearly represents a non-healthcare person or organization.
+      unknown:
+        description: Not enough evidence to reliably determine caller type.
+
+  intent:
+    enabled: true
+    type: choice
+    description: Identify the primary reason the caller contacted the organization.
+    threshold: 0.60
+    labels:
+      appointment:
+        description: Scheduling, rescheduling, cancelling or discussing an appointment.
+      insurance_verification:
+        description: Verifying insurance coverage or policy information.
+      eligibility_check:
+        description: Checking whether a patient or member is currently eligible for healthcare benefits.
+      prior_authorization:
+        description: Requesting or checking authorization required before a medical service, treatment, procedure or medication.
+      referral:
+        description: Requesting or discussing a medical referral.
+      claim_status:
+        description: Checking the status of an insurance claim.
+      billing:
+        description: Questions about charges, invoices or billing.
+      payment:
+        description: Making or discussing a payment.
+      prescription:
+        description: Prescription refill, processing or another prescription-related request.
+      medication_question:
+        description: Asking about a medication.
+      medical_records:
+        description: Requesting, sending or discussing medical records.
+      lab_results:
+        description: Requesting or discussing diagnostic or laboratory results.
+      provider_information:
+        description: Asking about a healthcare provider.
+      patient_information_update:
+        description: Updating patient demographic or account information.
+      technical_support:
+        description: Technical or system-related assistance.
+      general_information:
+        description: General informational request.
+      complaint:
+        description: Complaint, grievance or dissatisfaction.
+      callback_request:
+        description: Request to receive a callback.
+      other:
+        description: Intent does not match another configured category.
+      unknown:
+        description: Not enough evidence to determine the intent.

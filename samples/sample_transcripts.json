@@ -1,0 +1,169 @@
+[
+  {
+    "id": "short_doctor_prior_auth",
+    "length": "short",
+    "prefix": "",
+    "evidence": "Agent: How may I help?\nCaller: This is Nina from Dr. Patel's cardiology office. We are checking whether prior authorization for an echocardiogram was approved.",
+    "expected": {"healthcare_related": "yes", "caller_type": "doctor_office", "intent": "prior_authorization"}
+  },
+  {
+    "id": "short_patient_appointment",
+    "length": "short",
+    "prefix": "Caller: I am a patient and need to move my appointment from Monday to Thursday.",
+    "expected": {"healthcare_related": "yes", "caller_type": "patient_or_family", "intent": "appointment"}
+  },
+  {
+    "id": "short_pharmacy_prescription",
+    "length": "short",
+    "prefix": "Caller: Green Street Pharmacy calling for a new prescription because the previous refill order expired.",
+    "expected": {"healthcare_related": "yes", "caller_type": "pharmacy", "intent": "prescription"}
+  },
+  {
+    "id": "short_nonhealth_technical",
+    "length": "short",
+    "prefix": "Caller: I work for a furniture retailer. Our staff cannot sign in to the inventory portal and need technical help.",
+    "expected": {"healthcare_related": "no", "caller_type": "non_healthcare", "intent": "technical_support"}
+  },
+  {
+    "id": "short_ambiguous",
+    "length": "short",
+    "prefix": "Caller: Hello. I was told to call this number, but I do not know which department I need.",
+    "expected": {"healthcare_related": "no", "caller_type": "unknown", "intent": "unknown"}
+  },
+  {
+    "id": "medium_hospital_records",
+    "length": "medium",
+    "prefix": "Agent: Thank you for calling.\nCaller: Please hold while I locate the account.",
+    "filler": "Agent: I am still here.\nCaller: Thank you, I am reviewing the reference details and confirming the spelling.",
+    "filler_repeat": 12,
+    "evidence": "Caller: I am with the medical records department at County General Hospital. We need a copy of the patient's discharge records.",
+    "expected": {"healthcare_related": "yes", "caller_type": "hospital", "intent": "medical_records"}
+  },
+  {
+    "id": "medium_clinic_referral",
+    "length": "medium",
+    "prefix": "Virtual Agent: Please describe your request.",
+    "filler": "Caller: I am checking the information in front of me.\nVirtual Agent: Take your time and continue when ready.",
+    "filler_repeat": 12,
+    "evidence": "Caller: Lakeside Orthopedic Clinic is requesting the referral for this patient's specialist visit.",
+    "expected": {"healthcare_related": "yes", "caller_type": "clinic", "intent": "referral"}
+  },
+  {
+    "id": "medium_insurer_eligibility",
+    "length": "medium",
+    "prefix": "Agent: What can I research for you?",
+    "filler": "Caller: I have a reference number.\nAgent: I am ready when you are.\nCaller: One moment while I verify it.",
+    "filler_repeat": 12,
+    "evidence": "Caller: I represent Northstar Health Plan and need to confirm the member's current benefits eligibility.",
+    "expected": {"healthcare_related": "yes", "caller_type": "insurance_company", "intent": "eligibility_check"}
+  },
+  {
+    "id": "medium_lab_results",
+    "length": "medium",
+    "prefix": "Agent: How can I direct the call?",
+    "filler": "Caller: Let me check the case number before we continue.\nAgent: Certainly, I can wait.",
+    "filler_repeat": 14,
+    "evidence": "Caller: Metro Diagnostic Laboratory is calling to report and discuss the patient's blood test results.",
+    "expected": {"healthcare_related": "yes", "caller_type": "laboratory", "intent": "lab_results"}
+  },
+  {
+    "id": "medium_patient_billing",
+    "length": "medium",
+    "prefix": "Caller: I am calling about my own account.",
+    "filler": "Agent: I am reviewing the account.\nCaller: Thank you.\nAgent: Please allow another moment.",
+    "filler_repeat": 15,
+    "evidence": "Caller: The bill shows the same office visit charge twice, and I want the duplicate charge explained.",
+    "expected": {"healthcare_related": "yes", "caller_type": "patient_or_family", "intent": "billing"}
+  },
+  {
+    "id": "medium_home_health_insurance",
+    "length": "medium",
+    "prefix": "Representative: Please state the reason for the call.",
+    "filler": "Caller: I am gathering the policy details.\nRepresentative: I will remain on the line.",
+    "filler_repeat": 14,
+    "evidence": "Caller: Sunrise Home Health is verifying the patient's insurance coverage before the first nursing visit.",
+    "expected": {"healthcare_related": "yes", "caller_type": "nursing_or_home_health", "intent": "insurance_verification"}
+  },
+  {
+    "id": "medium_equipment_claim",
+    "length": "medium",
+    "prefix": "Agent: Welcome. How can I assist?",
+    "filler": "Caller: The reference is on another screen.\nAgent: No problem, I can wait while you retrieve it.",
+    "filler_repeat": 13,
+    "evidence": "Caller: Apex Durable Medical Equipment is checking the status of our claim for a patient's wheelchair.",
+    "expected": {"healthcare_related": "yes", "caller_type": "medical_equipment_provider", "intent": "claim_status"}
+  },
+  {
+    "id": "medium_patient_medication",
+    "length": "medium",
+    "prefix": "Caller: I have a question concerning my treatment.",
+    "filler": "Agent: I will document what you tell me.\nCaller: All right, I am reading the label now.",
+    "filler_repeat": 14,
+    "evidence": "Caller: I am the patient. Should I take my blood pressure medication with food in the morning?",
+    "expected": {"healthcare_related": "yes", "caller_type": "patient_or_family", "intent": "medication_question"}
+  },
+  {
+    "id": "medium_nonhealth_payment",
+    "length": "medium",
+    "prefix": "Caller: This is Westside Office Furniture.",
+    "filler": "Agent: I am looking up the commercial account.\nCaller: Thank you, I have the invoice nearby.",
+    "filler_repeat": 13,
+    "evidence": "Caller: We want to make a payment for the desks delivered last month.",
+    "expected": {"healthcare_related": "no", "caller_type": "non_healthcare", "intent": "payment"}
+  },
+  {
+    "id": "medium_hospital_complaint",
+    "length": "medium",
+    "prefix": "Agent: Please explain the issue.",
+    "filler": "Caller: I am checking the event timeline.\nAgent: I am listening and taking notes.",
+    "filler_repeat": 14,
+    "evidence": "Caller: I supervise admissions at Mercy Hospital and am filing a complaint about repeated transfer delays.",
+    "expected": {"healthcare_related": "yes", "caller_type": "hospital", "intent": "complaint"}
+  },
+  {
+    "id": "long_end_doctor_prior_auth",
+    "length": "long",
+    "prefix": "Virtual Agent: Welcome. Please stay on the line while your request is prepared.",
+    "filler": "Virtual Agent: Your call remains connected.\nCaller: I am still here and reviewing several reference numbers.\nVirtual Agent: Continue when you are ready.\nCaller: Thank you, I need another moment.",
+    "filler_repeat": 85,
+    "evidence": "Caller: To clarify at the end, we are calling from Dr. Patel's office to check whether prior authorization for the patient's MRI has been approved.",
+    "expected": {"healthcare_related": "yes", "caller_type": "doctor_office", "intent": "prior_authorization"}
+  },
+  {
+    "id": "long_end_pharmacy_prescription",
+    "length": "long",
+    "prefix": "Agent: The line is open while you gather the details.",
+    "filler": "Caller: I am searching our records.\nAgent: That is fine; please continue when ready.\nCaller: I appreciate your patience.",
+    "filler_repeat": 120,
+    "evidence": "Caller: This is Harbor Specialty Pharmacy, and the primary reason is to request a refill prescription for the patient's medication.",
+    "expected": {"healthcare_related": "yes", "caller_type": "pharmacy", "intent": "prescription"}
+  },
+  {
+    "id": "long_end_insurer_claim",
+    "length": "long",
+    "prefix": "Representative: I can wait while you review the case.",
+    "filler": "Caller: There are many notes to review.\nRepresentative: Take the time you need.\nCaller: I am verifying the dates and identifiers.",
+    "filler_repeat": 115,
+    "evidence": "Caller: I am calling for Evergreen Health Insurance to obtain the current status of a medical claim submitted last month.",
+    "expected": {"healthcare_related": "yes", "caller_type": "insurance_company", "intent": "claim_status"}
+  },
+  {
+    "id": "long_end_clinic_appointment",
+    "length": "long",
+    "prefix": "Agent: Please remain connected.",
+    "filler": "Agent: I am available when you are ready.\nCaller: I am looking through the schedule now.\nAgent: Let me know when you find the entry.",
+    "filler_repeat": 110,
+    "evidence": "Caller: This is Riverside Rehabilitation Clinic. We need to reschedule the patient's appointment to next Wednesday.",
+    "expected": {"healthcare_related": "yes", "caller_type": "clinic", "intent": "appointment"}
+  },
+  {
+    "id": "long_end_patient_records",
+    "length": "long",
+    "prefix": "Virtual Agent: Your call is connected.",
+    "filler": "Caller: I am checking my paperwork.\nVirtual Agent: Please continue when ready.\nCaller: I have several pages and need a little more time.",
+    "filler_repeat": 110,
+    "evidence": "Caller: I am the patient's daughter and authorized caregiver. I need copies of her medical records sent to a new physician.",
+    "expected": {"healthcare_related": "yes", "caller_type": "patient_or_family", "intent": "medical_records"}
+  }
+]
+

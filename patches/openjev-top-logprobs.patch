@@ -1,0 +1,43 @@
+diff --git a/features/decision-test/internal/engine/llamacpp.go b/features/decision-test/internal/engine/llamacpp.go
+index 83c45f3..e562dcc 100644
+--- a/features/decision-test/internal/engine/llamacpp.go
++++ b/features/decision-test/internal/engine/llamacpp.go
+@@ -329,10 +329,14 @@ func gbnfQuote(key string) string {
+ }
+ 
+ func topLogprobs(n int) int {
+-	if 4*n > 64 {
++	// llama.cpp may include grammar/control candidates in the returned list even
++	// when every decision label has a strong logit bias.  A floor of 64 proved
++	// insufficient for a real 12-option transcript decision (label G was
++	// omitted), so keep a wider read window rather than inventing a probability.
++	if 4*n > 256 {
+ 		return 4 * n
+ 	}
+-	return 64
++	return 256
+ }
+ 
+ type chatResponse struct {
+diff --git a/features/decision-test/internal/engine/llamacpp_test.go b/features/decision-test/internal/engine/llamacpp_test.go
+index f0a23cd..5b5698d 100644
+--- a/features/decision-test/internal/engine/llamacpp_test.go
++++ b/features/decision-test/internal/engine/llamacpp_test.go
+@@ -38,7 +38,7 @@ func TestDirectRequestShape(t *testing.T) {
+ 	assertFloat(t, got, "temperature", 1)
+ 	assertFloat(t, got, "top_k", 0)
+ 	assertFloat(t, got, "top_p", 1)
+-	assertFloat(t, got, "top_logprobs", 64)
++	assertFloat(t, got, "top_logprobs", 256)
+ 	if got["logprobs"] != true || got["cache_prompt"] != false {
+ 		t.Fatalf("flags %+v", got)
+ 	}
+@@ -70,7 +70,7 @@ func TestTopLogprobsScales(t *testing.T) {
+ 	if _, err := NewClient(srv.URL, nil, 1).ReadLabelLogprobs(context.Background(), nil, labels); err != nil {
+ 		t.Fatal(err)
+ 	}
+-	assertFloat(t, got, "top_logprobs", 80)
++	assertFloat(t, got, "top_logprobs", 256)
+ }
+ 
+ func TestGenerateSSE(t *testing.T) {

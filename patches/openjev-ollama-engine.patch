@@ -1,0 +1,696 @@
+diff --git a/features/decision-test/cmd/decision-test/main.go b/features/decision-test/cmd/decision-test/main.go
+index 7399a48..97c0565 100644
+--- a/features/decision-test/cmd/decision-test/main.go
++++ b/features/decision-test/cmd/decision-test/main.go
+@@ -206,17 +206,38 @@ func buildServer(opts *serverOptions) (*http.Server, *logger.Logger, context.Can
+ 		output = file
+ 	}
+ 	log := logger.New(output).WithComponent("decision")
+-	eng := engine.NewClient(cfg.LlamaURL, log, cfg.Workers)
+-	labels, labelErr := engine.ResolveLabels(context.Background(), eng)
++	var eng engine.Engine
++	var labels []engine.Label
++	var startup func(context.Context) error
++	if cfg.Engine == "ollama" {
++		ollama := engine.NewOllamaClient(
++			cfg.OllamaURL,
++			cfg.OllamaModel,
++			cfg.OllamaKeepAlive,
++			cfg.OllamaNumCtx,
++			cfg.Workers,
++			log,
++		)
++		eng = ollama
++		labels = alphabetLabels()
++		startup = ollama.Warmup
++	} else {
++		llama := engine.NewClient(cfg.LlamaURL, log, cfg.Workers)
++		eng = llama
++		resolved, err := engine.ResolveLabels(context.Background(), llama)
++		if err != nil {
++			startup = func(context.Context) error { return err }
++		} else {
++			labels = resolved
++			startup = llama.Warmup
++		}
++	}
+ 	var svc *decision.Service
+ 	var stopPool context.CancelFunc
+ 	readyErr := ""
+-	if labelErr != nil {
+-		readyErr = labelErr.Error()
+-		log.Error("label resolve failed", "error", labelErr)
+-	} else if err := eng.Warmup(context.Background()); err != nil {
++	if err := startup(context.Background()); err != nil {
+ 		readyErr = err.Error()
+-		log.Error("warmup failed", "error", err)
++		log.Error("engine startup failed", "engine", cfg.Engine, "error", err)
+ 	} else {
+ 		svc = &decision.Service{
+ 			Engine:       eng,
+@@ -228,30 +249,32 @@ func buildServer(opts *serverOptions) (*http.Server, *logger.Logger, context.Can
+ 		var poolCtx context.Context
+ 		poolCtx, stopPool = context.WithCancel(context.Background())
+ 		svc.StartPool(poolCtx, cfg.Workers)
+-		log.Info("server starting", "api_port", cfg.APIPort, "model_id", cfg.ModelID, "llama_url", cfg.LlamaURL, "workers", cfg.Workers, "stall_timeout_ms", cfg.StallTimeoutMs)
++		log.Info("server starting", "api_port", cfg.APIPort, "model_id", cfg.ModelID, "engine", cfg.Engine, "workers", cfg.Workers, "stall_timeout_ms", cfg.StallTimeoutMs)
+ 	}
+ 	mux := http.NewServeMux()
+ 	humaAPI := humago.New(mux, huma.DefaultConfig("Decision Test", "0.0.1"))
+ 	api.Register(humaAPI, svc, func(ctx context.Context) domain.Health {
+ 		reachable, herr := eng.Health(ctx)
+ 		h := domain.Health{
+-			Ready:          svc != nil && reachable && herr == nil,
+-			Model:          cfg.ModelID,
+-			LlamaReachable: reachable && herr == nil,
+-			Workers:        cfg.Workers,
+-			Error:          readyErr,
++			Ready:           svc != nil && reachable && herr == nil,
++			Model:           cfg.ModelID,
++			Engine:          cfg.Engine,
++			EngineReachable: reachable && herr == nil,
++			LlamaReachable:  cfg.Engine == "llama.cpp" && reachable && herr == nil,
++			Workers:         cfg.Workers,
++			Error:           readyErr,
+ 		}
+ 		if herr != nil && h.Error == "" {
+ 			h.Error = herr.Error()
+ 		}
+-		if svc != nil {
++		if svc != nil && cfg.Engine == "llama.cpp" {
+ 			h.LabelTokenIDs = map[string]int{}
+ 			for _, label := range labels {
+ 				h.LabelTokenIDs[label.Letter] = label.TokenID
+ 			}
+-			if svc.Pool != nil {
+-				h.QueueDepth = svc.Pool.Depth()
+-			}
++		}
++		if svc != nil && svc.Pool != nil {
++			h.QueueDepth = svc.Pool.Depth()
+ 		}
+ 		return h
+ 	})
+@@ -260,3 +283,11 @@ func buildServer(opts *serverOptions) (*http.Server, *logger.Logger, context.Can
+ 		Handler: mux,
+ 	}, log, stopPool, nil
+ }
++
++func alphabetLabels() []engine.Label {
++	labels := make([]engine.Label, 20)
++	for i := range labels {
++		labels[i] = engine.Label{Letter: string(rune('A' + i))}
++	}
++	return labels
++}
+diff --git a/features/decision-test/internal/config/config.go b/features/decision-test/internal/config/config.go
+index 6711cc5..dfed6f2 100644
+--- a/features/decision-test/internal/config/config.go
++++ b/features/decision-test/internal/config/config.go
+@@ -15,21 +15,26 @@ const (
+ )
+ 
+ type File struct {
+-	APIHost        string `yaml:"api_host"`
+-	APIPort        int    `yaml:"api_port"`
+-	LlamaURL       string `yaml:"llama_url"`
+-	LlamaHost      string `yaml:"llama_host"`
+-	LlamaPort      int    `yaml:"llama_port"`
+-	LlamaBinary    string `yaml:"llama_binary"`
+-	LlamaBuild     string `yaml:"llama_build"`
+-	LlamaZip       string `yaml:"llama_zip"`
+-	CudaRTZip      string `yaml:"cudart_zip"`
+-	ModelPath      string `yaml:"model_path"`
+-	ModelID        string `yaml:"model_id"`
+-	ModelURL       string `yaml:"model_url"`
+-	LogPath        string `yaml:"log_path"`
+-	Workers        int    `yaml:"workers"`
+-	StallTimeoutMs int    `yaml:"stall_timeout_ms"`
++	Engine          string `yaml:"engine"`
++	APIHost         string `yaml:"api_host"`
++	APIPort         int    `yaml:"api_port"`
++	LlamaURL        string `yaml:"llama_url"`
++	LlamaHost       string `yaml:"llama_host"`
++	LlamaPort       int    `yaml:"llama_port"`
++	LlamaBinary     string `yaml:"llama_binary"`
++	LlamaBuild      string `yaml:"llama_build"`
++	LlamaZip        string `yaml:"llama_zip"`
++	CudaRTZip       string `yaml:"cudart_zip"`
++	ModelPath       string `yaml:"model_path"`
++	ModelID         string `yaml:"model_id"`
++	ModelURL        string `yaml:"model_url"`
++	OllamaURL       string `yaml:"ollama_url"`
++	OllamaModel     string `yaml:"ollama_model"`
++	OllamaKeepAlive string `yaml:"ollama_keep_alive"`
++	OllamaNumCtx    int    `yaml:"ollama_num_ctx"`
++	LogPath         string `yaml:"log_path"`
++	Workers         int    `yaml:"workers"`
++	StallTimeoutMs  int    `yaml:"stall_timeout_ms"`
+ }
+ 
+ func Load(path string) (File, error) {
+@@ -41,9 +46,45 @@ func Load(path string) (File, error) {
+ 	if err := yaml.Unmarshal(raw, &cfg); err != nil {
+ 		return File{}, err
+ 	}
+-	if cfg.APIPort == 0 || cfg.LlamaURL == "" || cfg.ModelID == "" || cfg.ModelPath == "" || cfg.LlamaBinary == "" {
++	if cfg.Engine == "" {
++		cfg.Engine = "llama.cpp"
++	}
++	if cfg.Engine == "ollama" {
++		if value := os.Getenv("OPENJEV_OLLAMA_URL"); value != "" {
++			cfg.OllamaURL = value
++		}
++		if value := os.Getenv("OPENJEV_OLLAMA_MODEL"); value != "" {
++			cfg.OllamaModel = value
++			cfg.ModelID = value
++		}
++	}
++	if cfg.APIPort == 0 {
+ 		return File{}, fmt.Errorf("settings file %s is missing required fields", path)
+ 	}
++	switch cfg.Engine {
++	case "llama.cpp":
++		if cfg.LlamaURL == "" || cfg.ModelID == "" || cfg.ModelPath == "" || cfg.LlamaBinary == "" {
++			return File{}, fmt.Errorf("settings file %s is missing required llama.cpp fields", path)
++		}
++	case "ollama":
++		if cfg.OllamaURL == "" || cfg.OllamaModel == "" {
++			return File{}, fmt.Errorf("settings file %s is missing required ollama fields", path)
++		}
++		if cfg.ModelID == "" {
++			cfg.ModelID = cfg.OllamaModel
++		}
++		if cfg.OllamaKeepAlive == "" {
++			cfg.OllamaKeepAlive = "10m"
++		}
++		if cfg.OllamaNumCtx == 0 {
++			cfg.OllamaNumCtx = 4096
++		}
++		if cfg.OllamaNumCtx < 1 {
++			return File{}, fmt.Errorf("ollama_num_ctx must be >= 1")
++		}
++	default:
++		return File{}, fmt.Errorf("engine must be llama.cpp or ollama")
++	}
+ 	if cfg.Workers < 0 {
+ 		return File{}, fmt.Errorf("workers must be >= 1")
+ 	}
+diff --git a/features/decision-test/internal/config/config_test.go b/features/decision-test/internal/config/config_test.go
+index c5ffbf1..cd54e30 100644
+--- a/features/decision-test/internal/config/config_test.go
++++ b/features/decision-test/internal/config/config_test.go
+@@ -36,7 +36,7 @@ func TestLoad(t *testing.T) {
+ 	if err != nil {
+ 		t.Fatal(err)
+ 	}
+-	if cfg.APIHost != "127.0.0.1" || cfg.APIPort != 8090 || cfg.LlamaURL != "http://127.0.0.1:18080" {
++	if cfg.Engine != "llama.cpp" || cfg.APIHost != "127.0.0.1" || cfg.APIPort != 8090 || cfg.LlamaURL != "http://127.0.0.1:18080" {
+ 		t.Fatalf("unexpected config: %+v", cfg)
+ 	}
+ 	if cfg.ModelID != "minicpm5-2b-q4_k_m" || cfg.ModelPath != "models/MiniCPM5-2B-Q4_K_M.gguf" {
+@@ -50,6 +50,49 @@ func TestLoad(t *testing.T) {
+ 	}
+ }
+ 
++func TestLoadOllama(t *testing.T) {
++	path := filepath.Join(t.TempDir(), "decision-ollama.yaml")
++	raw := []byte("engine: ollama\napi_host: 127.0.0.1\napi_port: 8090\nollama_url: http://127.0.0.1:11434\nollama_model: gemma4:e4b\n")
++	if err := os.WriteFile(path, raw, 0o644); err != nil {
++		t.Fatal(err)
++	}
++	cfg, err := Load(path)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if cfg.Engine != "ollama" || cfg.ModelID != "gemma4:e4b" || cfg.OllamaKeepAlive != "10m" || cfg.OllamaNumCtx != 4096 {
++		t.Fatalf("ollama config: %+v", cfg)
++	}
++}
++
++func TestLoadRejectsUnknownEngine(t *testing.T) {
++	path := filepath.Join(t.TempDir(), "bad.yaml")
++	if err := os.WriteFile(path, []byte("engine: other\napi_port: 8090\n"), 0o644); err != nil {
++		t.Fatal(err)
++	}
++	_, err := Load(path)
++	if err == nil || !strings.Contains(err.Error(), "engine must be") {
++		t.Fatalf("error %v", err)
++	}
++}
++
++func TestLoadOllamaEnvironmentOverrides(t *testing.T) {
++	t.Setenv("OPENJEV_OLLAMA_URL", "http://127.0.0.1:22468")
++	t.Setenv("OPENJEV_OLLAMA_MODEL", "other:latest")
++	path := filepath.Join(t.TempDir(), "decision-ollama.yaml")
++	raw := []byte("engine: ollama\napi_port: 8090\nollama_url: http://127.0.0.1:11434\nollama_model: gemma4:e4b\nmodel_id: gemma4:e4b\n")
++	if err := os.WriteFile(path, raw, 0o644); err != nil {
++		t.Fatal(err)
++	}
++	cfg, err := Load(path)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if cfg.OllamaURL != "http://127.0.0.1:22468" || cfg.OllamaModel != "other:latest" || cfg.ModelID != "other:latest" {
++		t.Fatalf("overrides not applied: %+v", cfg)
++	}
++}
++
+ func TestLoadDefaults(t *testing.T) {
+ 	cfg, err := Load(writeYAML(t, ""))
+ 	if err != nil {
+diff --git a/features/decision-test/internal/domain/types.go b/features/decision-test/internal/domain/types.go
+index 86def11..ba20ee7 100644
+--- a/features/decision-test/internal/domain/types.go
++++ b/features/decision-test/internal/domain/types.go
+@@ -127,11 +127,13 @@ type Usage struct {
+ }
+ 
+ type Health struct {
+-	Ready          bool           `json:"ready"`
+-	Model          string         `json:"model"`
+-	LlamaReachable bool           `json:"llama_reachable"`
+-	LabelTokenIDs  map[string]int `json:"label_token_ids"`
+-	Workers        int            `json:"workers" doc:"Configured worker count of the decision pool."`
+-	QueueDepth     int            `json:"queue_depth" doc:"Tasks currently waiting in the request queue."`
+-	Error          string         `json:"error,omitempty"`
++	Ready           bool           `json:"ready"`
++	Model           string         `json:"model"`
++	Engine          string         `json:"engine,omitempty"`
++	EngineReachable bool           `json:"engine_reachable"`
++	LlamaReachable  bool           `json:"llama_reachable,omitempty"`
++	LabelTokenIDs   map[string]int `json:"label_token_ids"`
++	Workers         int            `json:"workers" doc:"Configured worker count of the decision pool."`
++	QueueDepth      int            `json:"queue_depth" doc:"Tasks currently waiting in the request queue."`
++	Error           string         `json:"error,omitempty"`
+ }
+
+diff --git a/features/decision-test/internal/engine/ollama.go b/features/decision-test/internal/engine/ollama.go
+new file mode 100644
+index 0000000..5c1500c
+--- /dev/null
++++ b/features/decision-test/internal/engine/ollama.go
+@@ -0,0 +1,278 @@
++package engine
++
++import (
++	"bytes"
++	"context"
++	"encoding/json"
++	"fmt"
++	"io"
++	"net/http"
++	"strings"
++	"time"
++
++	"openjev/features/decision-test/internal/logger"
++	"openjev/features/decision-test/internal/prompt"
++)
++
++// OllamaClient implements Engine using Ollama's native chat API. Ollama does
++// not expose the option-token log probabilities required by OpenJev's direct
++// method, so this engine supports generation decisions only.
++type OllamaClient struct {
++	baseURL   string
++	model     string
++	keepAlive string
++	numCtx    int
++	http      *http.Client
++	log       *logger.Logger
++}
++
++func NewOllamaClient(baseURL, model, keepAlive string, numCtx, maxIdleConns int, log *logger.Logger) *OllamaClient {
++	if maxIdleConns < 1 {
++		maxIdleConns = 1
++	}
++	if keepAlive == "" {
++		keepAlive = "10m"
++	}
++	if numCtx < 1 {
++		numCtx = 4096
++	}
++	transport := http.DefaultTransport.(*http.Transport).Clone()
++	transport.MaxIdleConnsPerHost = maxIdleConns
++	if transport.MaxIdleConns < maxIdleConns {
++		transport.MaxIdleConns = maxIdleConns
++	}
++	return &OllamaClient{
++		baseURL:   strings.TrimRight(baseURL, "/"),
++		model:     model,
++		keepAlive: keepAlive,
++		numCtx:    numCtx,
++		http:      &http.Client{Timeout: 10 * time.Minute, Transport: transport},
++		log:       log,
++	}
++}
++
++type ollamaChatBody struct {
++	Model     string           `json:"model"`
++	Messages  []prompt.Message `json:"messages"`
++	Stream    bool             `json:"stream"`
++	Format    any              `json:"format,omitempty"`
++	Think     bool             `json:"think"`
++	KeepAlive string           `json:"keep_alive"`
++	Options   struct {
++		Temperature float64 `json:"temperature"`
++		NumCtx      int     `json:"num_ctx"`
++	} `json:"options"`
++}
++
++type ollamaChatResponse struct {
++	Message struct {
++		Content string `json:"content"`
++	} `json:"message"`
++	PromptEvalCount int   `json:"prompt_eval_count"`
++	EvalCount       int   `json:"eval_count"`
++	TotalDuration   int64 `json:"total_duration"`
++}
++
++func (c *OllamaClient) ReadLabelLogprobs(context.Context, []prompt.Message, []Label) (ReadResult, error) {
++	return ReadResult{}, fmt.Errorf("ollama engine does not expose label log probabilities; use options.method generation")
++}
++
++func (c *OllamaClient) Generate(ctx context.Context, messages []prompt.Message) (GenRaw, error) {
++	keys := generationOptionKeys(messages)
++	if len(keys) < 2 {
++		return GenRaw{}, fmt.Errorf("ollama generation prompt has fewer than two options")
++	}
++	body := c.chatBody(messages)
++	body.Format = probabilitySchema(keys)
++	started := time.Now()
++	var parsed ollamaChatResponse
++	if err := c.post(ctx, "/api/chat", body, &parsed); err != nil {
++		return GenRaw{}, err
++	}
++	if strings.TrimSpace(parsed.Message.Content) == "" {
++		return GenRaw{}, fmt.Errorf("ollama returned an empty response")
++	}
++	// Structured output constrains the keys and numeric ranges, but models can
++	// still emit weights that do not add up to exactly one. Convert valid
++	// non-negative weights into a probability distribution before OpenJev's
++	// normal generation validator performs its strict contract checks.
++	if normalized, ok := normalizeProbabilityJSON(parsed.Message.Content, keys); ok {
++		parsed.Message.Content = normalized
++	}
++	totalMs := float64(time.Since(started).Microseconds()) / 1000
++	if parsed.TotalDuration > 0 {
++		totalMs = float64(parsed.TotalDuration) / float64(time.Millisecond)
++	}
++	return GenRaw{
++		Text:             parsed.Message.Content,
++		TotalMs:          totalMs,
++		PromptTokens:     parsed.PromptEvalCount,
++		CompletionTokens: parsed.EvalCount,
++	}, nil
++}
++
++func (c *OllamaClient) Health(ctx context.Context) (bool, error) {
++	var parsed struct {
++		Models []struct {
++			Name         string   `json:"name"`
++			Model        string   `json:"model"`
++			Capabilities []string `json:"capabilities"`
++		} `json:"models"`
++	}
++	if err := c.get(ctx, "/api/tags", &parsed); err != nil {
++		return false, err
++	}
++	for _, item := range parsed.Models {
++		if item.Name == c.model || item.Model == c.model {
++			if len(item.Capabilities) > 0 && !contains(item.Capabilities, "completion") {
++				return false, fmt.Errorf("ollama model %q does not have completion capability", c.model)
++			}
++			return true, nil
++		}
++	}
++	return false, fmt.Errorf("ollama model %q is not installed", c.model)
++}
++
++func contains(values []string, expected string) bool {
++	for _, value := range values {
++		if value == expected {
++			return true
++		}
++	}
++	return false
++}
++
++func (c *OllamaClient) Warmup(ctx context.Context) error {
++	body := c.chatBody([]prompt.Message{{Role: "user", Content: "Reply with the single word ready."}})
++	var parsed ollamaChatResponse
++	if err := c.post(ctx, "/api/chat", body, &parsed); err != nil {
++		return err
++	}
++	if strings.TrimSpace(parsed.Message.Content) == "" {
++		return fmt.Errorf("ollama warmup returned no completion")
++	}
++	return nil
++}
++
++func (c *OllamaClient) chatBody(messages []prompt.Message) ollamaChatBody {
++	body := ollamaChatBody{
++		Model:     c.model,
++		Messages:  messages,
++		Stream:    false,
++		Think:     false,
++		KeepAlive: c.keepAlive,
++	}
++	body.Options.Temperature = 0
++	body.Options.NumCtx = c.numCtx
++	return body
++}
++
++func (c *OllamaClient) post(ctx context.Context, path string, body, dest any) error {
++	raw, err := json.Marshal(body)
++	if err != nil {
++		return err
++	}
++	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, bytes.NewReader(raw))
++	if err != nil {
++		return err
++	}
++	req.Header.Set("Content-Type", "application/json")
++	return c.do(req, path, dest)
++}
++
++func (c *OllamaClient) get(ctx context.Context, path string, dest any) error {
++	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
++	if err != nil {
++		return err
++	}
++	return c.do(req, path, dest)
++}
++
++func (c *OllamaClient) do(req *http.Request, path string, dest any) error {
++	resp, err := c.http.Do(req)
++	if err != nil {
++		return err
++	}
++	defer resp.Body.Close()
++	raw, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
++	if err != nil {
++		return err
++	}
++	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
++		if c.log != nil {
++			prefix := raw
++			if len(prefix) > 500 {
++				prefix = prefix[:500]
++			}
++			c.log.Error("ollama request failed", "path", path, "status", resp.StatusCode, "body_prefix", string(prefix), "error", "non-success status")
++		}
++		return fmt.Errorf("ollama %s status %d", path, resp.StatusCode)
++	}
++	if dest == nil {
++		return nil
++	}
++	if err := json.Unmarshal(raw, dest); err != nil {
++		return fmt.Errorf("decode ollama %s response: %w", path, err)
++	}
++	return nil
++}
++
++func generationOptionKeys(messages []prompt.Message) []string {
++	var keys []string
++	for _, message := range messages {
++		if message.Role != "user" {
++			continue
++		}
++		for _, line := range strings.Split(message.Content, "\n") {
++			if len(line) < 4 || line[1] != '.' || line[2] != ' ' || line[0] < 'A' || line[0] > 'T' {
++				continue
++			}
++			keys = append(keys, line[:1]+": "+line[3:])
++		}
++	}
++	return keys
++}
++
++func probabilitySchema(keys []string) map[string]any {
++	properties := make(map[string]any, len(keys))
++	for _, key := range keys {
++		properties[key] = map[string]any{
++			"type":    "number",
++			"minimum": 0,
++			"maximum": 1,
++		}
++	}
++	return map[string]any{
++		"type":                 "object",
++		"properties":           properties,
++		"required":             keys,
++		"additionalProperties": false,
++	}
++}
++
++func normalizeProbabilityJSON(raw string, keys []string) (string, bool) {
++	var values map[string]float64
++	if err := json.Unmarshal([]byte(raw), &values); err != nil || len(values) != len(keys) {
++		return raw, false
++	}
++	total := 0.0
++	for _, key := range keys {
++		value, ok := values[key]
++		if !ok || value < 0 {
++			return raw, false
++		}
++		total += value
++	}
++	if total <= 0 {
++		return raw, false
++	}
++	normalized := make(map[string]float64, len(keys))
++	for _, key := range keys {
++		normalized[key] = values[key] / total
++	}
++	encoded, err := json.Marshal(normalized)
++	if err != nil {
++		return raw, false
++	}
++	return string(encoded), true
++}
+
+diff --git a/features/decision-test/internal/engine/ollama_test.go b/features/decision-test/internal/engine/ollama_test.go
+new file mode 100644
+index 0000000..3e0f99b
+--- /dev/null
++++ b/features/decision-test/internal/engine/ollama_test.go
+@@ -0,0 +1,100 @@
++package engine
++
++import (
++	"context"
++	"encoding/json"
++	"math"
++	"net/http"
++	"net/http/httptest"
++	"strings"
++	"testing"
++
++	"openjev/features/decision-test/internal/prompt"
++)
++
++func TestOllamaGenerateUsesStructuredProbabilitySchema(t *testing.T) {
++	var got map[string]any
++	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		if r.URL.Path != "/api/chat" {
++			t.Fatalf("path %s", r.URL.Path)
++		}
++		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
++			t.Fatal(err)
++		}
++		_, _ = w.Write([]byte(`{"message":{"content":"{\"A: Alpha\":0.75,\"B: Beta\":0.25}"},"prompt_eval_count":12,"eval_count":9,"total_duration":250000000}`))
++	}))
++	defer srv.Close()
++
++	messages := []prompt.Message{{Role: "user", Content: "Allowed options:\nA. Alpha\nB. Beta"}}
++	result, err := NewOllamaClient(srv.URL, "gemma4:e4b", "10m", 4096, 1, nil).Generate(context.Background(), messages)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if result.Text != `{"A: Alpha":0.75,"B: Beta":0.25}` || result.PromptTokens != 12 || result.CompletionTokens != 9 || result.TotalMs != 250 {
++		t.Fatalf("result %+v", result)
++	}
++	if got["model"] != "gemma4:e4b" || got["stream"] != false || got["think"] != false {
++		t.Fatalf("request flags %+v", got)
++	}
++	format, ok := got["format"].(map[string]any)
++	if !ok || format["additionalProperties"] != false {
++		t.Fatalf("format %+v", got["format"])
++	}
++	required, ok := format["required"].([]any)
++	if !ok || len(required) != 2 || required[0] != "A: Alpha" || required[1] != "B: Beta" {
++		t.Fatalf("required %+v", format["required"])
++	}
++}
++
++func TestOllamaHealthRequiresConfiguredModel(t *testing.T) {
++	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		_, _ = w.Write([]byte(`{"models":[{"name":"gemma4:e4b"}]}`))
++	}))
++	defer srv.Close()
++	client := NewOllamaClient(srv.URL, "gemma4:e4b", "10m", 4096, 1, nil)
++	ready, err := client.Health(context.Background())
++	if err != nil || !ready {
++		t.Fatalf("ready=%v err=%v", ready, err)
++	}
++	missing := NewOllamaClient(srv.URL, "missing:latest", "10m", 4096, 1, nil)
++	if _, err := missing.Health(context.Background()); err == nil || !strings.Contains(err.Error(), "not installed") {
++		t.Fatalf("error %v", err)
++	}
++}
++
++func TestOllamaHealthRejectsEmbeddingModel(t *testing.T) {
++	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		_, _ = w.Write([]byte(`{"models":[{"name":"embed:latest","capabilities":["embedding"]}]}`))
++	}))
++	defer srv.Close()
++	client := NewOllamaClient(srv.URL, "embed:latest", "10m", 4096, 1, nil)
++	if _, err := client.Health(context.Background()); err == nil || !strings.Contains(err.Error(), "completion capability") {
++		t.Fatalf("error %v", err)
++	}
++}
++
++func TestOllamaDirectExplainsGenerationRequirement(t *testing.T) {
++	client := NewOllamaClient("http://127.0.0.1:11434", "gemma4:e4b", "10m", 4096, 1, nil)
++	_, err := client.ReadLabelLogprobs(context.Background(), nil, nil)
++	if err == nil || !strings.Contains(err.Error(), "use options.method generation") {
++		t.Fatalf("error %v", err)
++	}
++}
++
++func TestNormalizeProbabilityJSON(t *testing.T) {
++	raw := `{"A: Alpha":0.3,"B: Beta":0.5}`
++	normalized, ok := normalizeProbabilityJSON(raw, []string{"A: Alpha", "B: Beta"})
++	if !ok {
++		t.Fatal("expected normalization")
++	}
++	var values map[string]float64
++	if err := json.Unmarshal([]byte(normalized), &values); err != nil {
++		t.Fatal(err)
++	}
++	if math.Abs(values["A: Alpha"]-0.375) > 1e-12 || math.Abs(values["B: Beta"]-0.625) > 1e-12 {
++		t.Fatalf("values %+v", values)
++	}
++	if _, ok := normalizeProbabilityJSON(`{"A: Alpha":0}`, []string{"A: Alpha", "B: Beta"}); ok {
++		t.Fatal("missing key must not normalize")
++	}
++}
+
+diff --git a/settings/decision-ollama.yaml b/settings/decision-ollama.yaml
+new file mode 100644
+index 0000000..8df1a66
+--- /dev/null
++++ b/settings/decision-ollama.yaml
+@@ -0,0 +1,11 @@
++engine: ollama
++api_host: 127.0.0.1
++api_port: 8090
++ollama_url: http://127.0.0.1:11434
++ollama_model: gemma4:e4b
++ollama_keep_alive: 10m
++ollama_num_ctx: 4096
++model_id: gemma4:e4b
++log_path: ""
++workers: 3
++stall_timeout_ms: 120000

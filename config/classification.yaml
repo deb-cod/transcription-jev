@@ -1,9 +1,34 @@
 version: 1
 
+inference:
+  # The UI/API can override this per request.
+  backend: openjev
+
 openjev:
   url: http://127.0.0.1:8090
   method: direct
   request_timeout_seconds: 120
+
+openjev_ollama_service:
+  # A second OpenJev instance using the Ollama engine runs on this port.
+  url: http://127.0.0.1:8091
+
+openjev_gemma_service:
+  # Experimental direct/logprob OpenJev instance backed by Gemma in llama.cpp.
+  url: http://127.0.0.1:8092
+
+ollama:
+  url: http://127.0.0.1:11434
+  model: gemma4:e4b
+  request_timeout_seconds: 600
+  keep_alive: 10m
+  num_ctx: 4096
+
+hybrid:
+  # Return the native OpenJev result immediately when every task is confident.
+  # Otherwise retry the whole transcript with the direct Ollama adapter.
+  fallback_confidence: 0.65
+  fallback_on_unknown: true
 
 transcript:
   max_total_characters: 200000

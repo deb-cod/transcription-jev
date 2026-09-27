@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
+import os
 from pathlib import Path
 from threading import RLock
 from typing import Any, Mapping
@@ -38,9 +39,19 @@ class ChunkingConfig:
 
 @dataclass(frozen=True)
 class RuntimeConfig:
+    default_backend: str
     openjev_url: str
+    openjev_ollama_url: str
+    openjev_gemma_url: str
     method: str
     request_timeout_seconds: float
+    ollama_url: str
+    ollama_model: str
+    ollama_timeout_seconds: float
+    ollama_keep_alive: str
+    ollama_num_ctx: int
+    hybrid_fallback_confidence: float
+    hybrid_fallback_on_unknown: bool
     max_total_characters: int
     chunking: ChunkingConfig
     tasks: tuple[TaskConfig, ...]
@@ -94,11 +105,47 @@ def _validate(raw: Any) -> RuntimeConfig:
     if not isinstance(raw, dict):
         raise ConfigError("configuration root must be a mapping")
 
+    inference = _mapping(raw.get("inference", {}), "inference")
+    default_backend = str(inference.get("backend", "openjev")).lower()
+    if default_backend not in {
+        "openjev",
+        "openjev_gemma",
+        "openjev_ollama",
+        "ollama",
+        "hybrid",
+    }:
+        raise ConfigError(
+            "inference.backend must be openjev, openjev_gemma, "
+            "openjev_ollama, ollama, or hybrid"
+        )
+
     openjev = _mapping(raw.get("openjev", {}), "openjev")
     url = str(openjev.get("url", "http://127.0.0.1:8090")).rstrip("/")
-    method = str(openjev.get("method", "direct"))
+    method = os.getenv("OPENJEV_METHOD", str(openjev.get("method", "direct"))).lower()
     if method not in {"direct", "generation", "both"}:
         raise ConfigError("openjev.method must be direct, generation, or both")
+
+    openjev_ollama = _mapping(
+        raw.get("openjev_ollama_service", {}), "openjev_ollama_service"
+    )
+    openjev_ollama_url = str(
+        openjev_ollama.get("url", "http://127.0.0.1:8091")
+    ).rstrip("/")
+
+    openjev_gemma = _mapping(
+        raw.get("openjev_gemma_service", {}), "openjev_gemma_service"
+    )
+    openjev_gemma_url = str(
+        openjev_gemma.get("url", "http://127.0.0.1:8092")
+    ).rstrip("/")
+
+    ollama = _mapping(raw.get("ollama", {}), "ollama")
+    ollama_url = str(ollama.get("url", "http://127.0.0.1:11434")).rstrip("/")
+
+    hybrid = _mapping(raw.get("hybrid", {}), "hybrid")
+    hybrid_confidence = float(hybrid.get("fallback_confidence", 0.65))
+    if not 0.0 <= hybrid_confidence <= 1.0:
+        raise ConfigError("hybrid.fallback_confidence must be between 0 and 1")
 
     transcript = _mapping(raw.get("transcript", {}), "transcript")
     chunking_raw = _mapping(transcript.get("chunking", {}), "transcript.chunking")
@@ -141,9 +188,19 @@ def _validate(raw: Any) -> RuntimeConfig:
 
     aggregation = _mapping(raw.get("aggregation", {}), "aggregation")
     return RuntimeConfig(
+        default_backend=default_backend,
         openjev_url=url,
+        openjev_ollama_url=openjev_ollama_url,
+        openjev_gemma_url=openjev_gemma_url,
         method=method,
         request_timeout_seconds=float(openjev.get("request_timeout_seconds", 120)),
+        ollama_url=ollama_url,
+        ollama_model=str(ollama.get("model", "")),
+        ollama_timeout_seconds=float(ollama.get("request_timeout_seconds", 600)),
+        ollama_keep_alive=str(ollama.get("keep_alive", "10m")),
+        ollama_num_ctx=_positive_int(ollama.get("num_ctx", 4096), "ollama.num_ctx"),
+        hybrid_fallback_confidence=hybrid_confidence,
+        hybrid_fallback_on_unknown=bool(hybrid.get("fallback_on_unknown", True)),
         max_total_characters=_positive_int(
             transcript.get("max_total_characters", 200000), "max_total_characters"
         ),
@@ -169,4 +226,3 @@ def _positive_int(value: Any, name: str) -> int:
     if converted <= 0:
         raise ConfigError(f"{name} must be positive")
     return converted
-

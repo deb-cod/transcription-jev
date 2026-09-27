@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections import Counter
 import math
 from typing import Mapping, Sequence
 
@@ -18,6 +19,12 @@ class AggregatedDecision:
     label: str
     confidence: float
     probabilities: dict[str, float]
+
+
+@dataclass(frozen=True)
+class CategoricalDecision:
+    label: str
+    vote_counts: dict[str, int]
 
 
 def aggregate_evidence(
@@ -86,3 +93,38 @@ def _positive_evidence_max(
     top_probability = probabilities[raw_label]
     label = raw_label if top_probability >= threshold else "unknown"
     return AggregatedDecision(raw_label, label, top_probability, probabilities)
+
+
+def aggregate_categorical_evidence(
+    labels: Sequence[str],
+    label_names: Sequence[str],
+    options: Mapping[str, object],
+) -> CategoricalDecision:
+    """Aggregate label-only backends without presenting vote shares as probabilities."""
+    if not labels:
+        raise ValueError("cannot aggregate empty categorical evidence")
+    allowed = set(label_names)
+    invalid = [label for label in labels if label not in allowed]
+    if invalid:
+        raise ValueError(f"categorical evidence contains invalid labels: {invalid}")
+    counts = Counter(labels)
+    strategy = str(options.get("strategy", "confidence_powered_average"))
+    if strategy == "positive_evidence_max":
+        positive = str(options.get("positive_label", ""))
+        if positive not in allowed or len(label_names) != 2:
+            raise ValueError("positive_evidence_max requires a valid positive label and two labels")
+        if counts[positive] > 0:
+            return CategoricalDecision(positive, dict(counts))
+
+    candidates = [label for label in label_names if counts[label] > 0 and label != "unknown"]
+    if not candidates:
+        return CategoricalDecision("unknown" if "unknown" in allowed else labels[0], dict(counts))
+
+    # Caller identity is commonly introduced early; apply the configured boost
+    # only as a tie-breaking weight. All raw counts remain visible in output.
+    weights = {label: float(counts[label]) for label in candidates}
+    first = labels[0]
+    if first in weights:
+        weights[first] += max(0.0, float(options.get("introductory_chunk_boost", 1.0)) - 1.0)
+    winner = max(candidates, key=lambda label: (weights[label], -label_names.index(label)))
+    return CategoricalDecision(winner, dict(counts))

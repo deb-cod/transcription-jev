@@ -1,6 +1,10 @@
 import pytest
 
-from app.transcript.evidence_aggregator import ChunkEvidence, aggregate_evidence
+from app.transcript.evidence_aggregator import (
+    ChunkEvidence,
+    aggregate_categorical_evidence,
+    aggregate_evidence,
+)
 
 
 def test_confident_chunk_outweighs_uncertain_chunks() -> None:
@@ -55,3 +59,13 @@ def test_powered_average_favors_sharp_evidence() -> None:
         {"strategy": "confidence_powered_average", "confidence_power": 8},
     )
     assert result.label == "target"
+
+
+def test_categorical_aggregation_reports_votes_without_probabilities() -> None:
+    result = aggregate_categorical_evidence(
+        ["unknown", "doctor_office", "unknown"],
+        ["doctor_office", "hospital", "unknown"],
+        {},
+    )
+    assert result.label == "doctor_office"
+    assert result.vote_counts == {"unknown": 2, "doctor_office": 1}

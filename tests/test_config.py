@@ -37,3 +37,9 @@ def test_disabled_label_is_excluded(tmp_path: Path) -> None:
     view = ConfigStore(target).public_view()
     assert "pharmacy" not in view["caller_type"]
 
+
+def test_openjev_method_environment_override(monkeypatch) -> None:
+    monkeypatch.setenv("OPENJEV_METHOD", "direct")
+    runtime = ConfigStore("config/classification.yaml").snapshot()
+    assert runtime.method == "direct"
+    assert runtime.openjev_gemma_url == "http://127.0.0.1:8092"

@@ -3,6 +3,7 @@ services:
     build: .
     environment:
       OPENJEV_URL: http://host.docker.internal:8090
+      OLLAMA_URL: http://host.docker.internal:11434
       ENABLE_CONFIG_RELOAD: "false"
     volumes:
       - ./config:/app/config:ro
@@ -10,4 +11,3 @@ services:
       - "8000:8000"
     extra_hosts:
       - "host.docker.internal:host-gateway"
-

@@ -2,20 +2,21 @@ diff --git a/features/decision-test/internal/engine/llamacpp.go b/features/decis
 index 83c45f3..e562dcc 100644
 --- a/features/decision-test/internal/engine/llamacpp.go
 +++ b/features/decision-test/internal/engine/llamacpp.go
-@@ -329,10 +329,14 @@ func gbnfQuote(key string) string {
+@@ -329,10 +329,15 @@ func gbnfQuote(key string) string {
  }
  
  func topLogprobs(n int) int {
 -	if 4*n > 64 {
 +	// llama.cpp may include grammar/control candidates in the returned list even
-+	// when every decision label has a strong logit bias.  A floor of 64 proved
-+	// insufficient for a real 12-option transcript decision (label G was
-+	// omitted), so keep a wider read window rather than inventing a probability.
-+	if 4*n > 256 {
++	// when every decision label has a strong logit bias. A Gemma 4 E4B decision
++	// over a long transcript placed one valid option below the first 512 returned
++	// tokens. Keep a wider read window so every configured A-T option can be
++	// measured instead of inventing a probability for an omitted token.
++	if 4*n > 1024 {
  		return 4 * n
  	}
 -	return 64
-+	return 256
++	return 1024
  }
  
  type chatResponse struct {
@@ -28,7 +29,7 @@ index f0a23cd..5b5698d 100644
  	assertFloat(t, got, "top_k", 0)
  	assertFloat(t, got, "top_p", 1)
 -	assertFloat(t, got, "top_logprobs", 64)
-+	assertFloat(t, got, "top_logprobs", 256)
++	assertFloat(t, got, "top_logprobs", 1024)
  	if got["logprobs"] != true || got["cache_prompt"] != false {
  		t.Fatalf("flags %+v", got)
  	}
@@ -37,7 +38,7 @@ index f0a23cd..5b5698d 100644
  		t.Fatal(err)
  	}
 -	assertFloat(t, got, "top_logprobs", 80)
-+	assertFloat(t, got, "top_logprobs", 256)
++	assertFloat(t, got, "top_logprobs", 1024)
  }
  
  func TestGenerateSSE(t *testing.T) {

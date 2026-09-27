@@ -18,6 +18,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from app.classifier.generic_classifier import GenericDecisionClassifier
 from app.classifier.openjev_client import OpenJevClient
+from app.classifier.ollama_client import OllamaClient
 from app.config.loader import ConfigStore
 
 
@@ -33,6 +34,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate the local classifier")
     parser.add_argument("--dataset", default="samples/sample_transcripts.json")
     parser.add_argument("--config", default="config/classification.yaml")
+    parser.add_argument("--backend", choices=("openjev", "ollama"), default=None)
+    parser.add_argument("--model", default=None)
     parser.add_argument("--limit", type=int, default=0)
     args = parser.parse_args()
     examples = json.loads(Path(args.dataset).read_text(encoding="utf-8"))
@@ -40,8 +43,19 @@ def main() -> None:
         examples = examples[: args.limit]
     store = ConfigStore(args.config)
     runtime = store.snapshot()
-    client = OpenJevClient(runtime.openjev_url, runtime.request_timeout_seconds)
-    classifier = GenericDecisionClassifier(store, client)
+    backend = args.backend or runtime.default_backend
+    client = (
+        OpenJevClient(runtime.openjev_url, runtime.request_timeout_seconds)
+        if backend == "openjev"
+        else OllamaClient(
+            runtime.ollama_url,
+            runtime.ollama_model,
+            runtime.ollama_timeout_seconds,
+            runtime.ollama_keep_alive,
+            runtime.ollama_num_ctx,
+        )
+    )
+    classifier = GenericDecisionClassifier(store, client, default_backend=backend)
     records: list[dict[str, Any]] = []
     process = psutil.Process()
     rss_before = process.memory_info().rss
@@ -51,7 +65,7 @@ def main() -> None:
         for index, example in enumerate(examples, 1):
             transcript = materialize(example)
             item_started = time.perf_counter()
-            result = classifier.classify(transcript)
+            result = classifier.classify(transcript, backend=backend, model=args.model)
             elapsed = (time.perf_counter() - item_started) * 1000
             records.append(
                 {

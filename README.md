@@ -2,6 +2,7 @@
 
 ## Documentation map
 
+- [README_NATIVE_OPENJEV_ONLY.md](README_NATIVE_OPENJEV_ONLY.md) — install and expose only the fast MiniCPM-backed native OpenJev backend
 - [README_NATIVE_GEMMA_ONLY.md](README_NATIVE_GEMMA_ONLY.md) — complete one-model installation and runtime profile that exposes only native Gemma
 - [README_BEFORE_OLLAMA.md](README_BEFORE_OLLAMA.md) — original OpenJev-only installation and run procedure
 - [README_AFTER_OLLAMA.md](README_AFTER_OLLAMA.md) — current installation guide for OpenJev and any supported local Ollama model

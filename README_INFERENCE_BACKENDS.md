@@ -124,6 +124,12 @@ value sends more calls to Ollama. This route does not make Ollama itself run in
 
 ## 2. OpenJev native (fast)
 
+For a fresh MiniCPM-only installation and an interface that exposes only this
+backend, follow
+[README_NATIVE_OPENJEV_ONLY.md](README_NATIVE_OPENJEV_ONLY.md). Use
+`setup-openjev-native.ps1` once, then `run-openjev-native-only.ps1` whenever you
+want to run it.
+
 Request path:
 
 ```text

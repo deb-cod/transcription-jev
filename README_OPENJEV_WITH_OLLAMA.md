@@ -98,6 +98,9 @@ with an Ollama safety net for uncertain native classifications.
 
 ## Backend 2: OpenJev native (fast)
 
+For the isolated MiniCPM setup and launcher, see
+[README_NATIVE_OPENJEV_ONLY.md](README_NATIVE_OPENJEV_ONLY.md).
+
 This route uses OpenJev's native direct-decision setup:
 
 ```text

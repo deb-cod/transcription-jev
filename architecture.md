@@ -1,6 +1,6 @@
 # Project Architecture
 
-This document describes the current call-classification application and all five inference choices. OpenJev's internal implementation is covered separately in [openjev-architecture.md](openjev-architecture.md), and measured four-chunk execution is documented in [README_INFERENCE_BENCHMARK.md](README_INFERENCE_BENCHMARK.md).
+This document describes the current call-classification application and all five inference choices. OpenJev's internal implementation is covered separately in [openjev-architecture.md](openjev-architecture.md), measured four-chunk execution is documented in [README_INFERENCE_BENCHMARK.md](README_INFERENCE_BENCHMARK.md), and the presentation-oriented explanation is in [README_DEMO_GUIDE.md](README_DEMO_GUIDE.md).
 
 ## System context
 
@@ -14,7 +14,7 @@ flowchart TB
         API --> Loader[Configuration loader]
         API --> Classifier[Generic decision classifier]
         Classifier --> Prep[Transcript preprocessor]
-        Prep --> Chunker[Token-aware chunker]
+        Prep --> Chunker[Speaker-aware character chunker]
         Chunker --> Router{Requested backend}
         Router --> OJC[OpenJev client]
         Router --> OLC[Direct Ollama client]
@@ -33,7 +33,8 @@ flowchart TB
     OpenJevOllama -->|native API :11434| Ollama
     OpenJev -->|OpenAI-compatible :18080| Llama[llama.cpp server]
     OpenJevGemma -->|OpenAI-compatible :18081| LlamaGemma[llama.cpp Gemma server]
-    Llama --> GGUF[Configured GGUF model]
+    Llama --> MiniGGUF[MiniCPM GGUF]
+    LlamaGemma --> GemmaGGUF[Gemma E2B or E4B GGUF]
 
     OLC -->|HTTP :11434| Ollama[Ollama]
     Ollama --> LocalModel[Selected local completion model]
@@ -84,6 +85,42 @@ sequenceDiagram
 
 The three tasks are configured data, not hard-coded UI labels. A configuration reload can update task labels and descriptions without changing the frontend.
 
+## Question construction
+
+`GenericDecisionClassifier.build_questions()` converts every enabled task in
+`config/classification.yaml` into one runtime choice question. The mapping is
+deterministic:
+
+| YAML field | Runtime question field |
+|---|---|
+| Classification key, such as `caller_type` | Question ID |
+| Task `description` | `instructions` |
+| Enabled label key | Allowed criterion name |
+| Label `description` | Criterion meaning supplied to the model |
+| Task `threshold` | Post-aggregation abstention threshold |
+
+Conceptually, one generated question looks like this:
+
+```json
+{
+  "caller_type": {
+    "type": "choice",
+    "instructions": "Determine what kind of person or organization is calling.",
+    "criteria": {
+      "doctor_office": "Physician, specialist, physician group or doctor's office.",
+      "hospital": "Hospital, medical center or hospital department.",
+      "unknown": "Not enough evidence to reliably determine caller type."
+    }
+  }
+}
+```
+
+The actual request includes every enabled label. The same question set is sent
+with each transcript chunk. OpenJev receives all questions in one HTTP request,
+then schedules one model-level decision per question. The direct Ollama adapter
+instead requests one structured JSON object containing all task labels for the
+chunk. Both adapters validate returned labels against the configured vocabulary.
+
 ## Backend abstraction
 
 The request selects `hybrid`, `openjev`, `openjev_gemma`, `openjev_ollama`, or `ollama`. The generic
@@ -94,8 +131,42 @@ At deployment time, `INFERENCE_BACKENDS` can restrict which adapter clients are
 created and published by `/health` and `/models`. For example,
 `INFERENCE_BACKENDS=openjev_gemma` creates only the native Gemma client. The
 separate `INFERENCE_BACKEND=openjev_gemma` value makes it the request default.
-`run-gemma-only.ps1` sets both values and starts only ports 18081, 8092, and
-8000, so the UI cannot select a backend whose model was intentionally omitted.
+`run-gemma-only.ps1` (E4B) and `run-gemma-e2b-only.ps1` (E2B) set both values
+and start only ports 18081, 8092, and 8000, so the UI cannot select a backend
+whose model was intentionally omitted. The profiles are alternatives and use
+distinct runtime model IDs, but expose the same `openjev_gemma` API contract.
+
+Backend and model selection follow these boundaries:
+
+```text
+Per-request backend/model override
+        -> enabled client selected by FastAPI
+        -> environment-selected service URL/default
+        -> YAML default when no override exists
+```
+
+The request can choose only an instantiated backend. `INFERENCE_BACKENDS`
+controls which clients exist; `INFERENCE_BACKEND` controls the default. Task
+definitions, thresholds, chunking, and aggregation are not per-request
+overrides and continue to come from the validated YAML snapshot.
+
+### Native model deployment profiles
+
+The two native routes have the same decision architecture but separate services
+and model artifacts:
+
+| Profile | API backend | OpenJev | `llama.cpp` | Model artifact |
+|---|---|---:|---:|---|
+| Native MiniCPM | `openjev` | `:8090` | `:18080` | MiniCPM5-2B Q4_K_M GGUF |
+| Native Gemma E2B | `openjev_gemma` | `:8092` | `:18081` | Gemma 4 E2B Q4_0 GGUF |
+| Native Gemma E4B | `openjev_gemma` | `:8092` | `:18081` | Gemma 4 E4B Q4_0 GGUF |
+
+E2B and E4B are alternative Gemma profiles. They deliberately share ports and
+the API backend name, so only one should run at a time. GGUF provides a
+portable, quantized artifact for `llama.cpp`; Q4 reduces disk and memory demand,
+while `llama.cpp` exposes the label-token log probabilities required by the
+native direct-decision method. GGUF improves deployment efficiency, not model
+accuracy by itself.
 
 ### Execution expansion by backend
 
@@ -116,6 +187,28 @@ each task on its worker queue. Worker count controls scheduling capacity; the
 underlying model runtime, GPU memory, and configured model slots determine how
 much work truly executes concurrently. Increasing workers does not guarantee
 lower latency on a single-GPU laptop.
+
+### Token accounting
+
+For both native direct routes, each model-level decision requests exactly one
+answer token. The native output-token count is therefore deterministic:
+
+```text
+native output tokens = chunks (C) x enabled tasks (T)
+```
+
+With the current three tasks, a one-chunk transcript produces three direct
+output tokens and a four-chunk transcript produces twelve. Input tokens are
+larger because each task prompt includes the transcript chunk, instructions,
+and that task's label descriptions. Counts from different model tokenizers are
+not directly comparable.
+
+`transcript_processing.input_tokens_reported` is the sum of the prompt/input
+counts returned for all chunk calls. The current Python `DecisionResult` and API
+response do not expose output-token counts, even though native OpenJev and
+Ollama provide them at their lower-level interfaces. Direct native output can
+still be calculated from `C x T`; complete output-token telemetry requires the
+adapters and response contract to forward those fields.
 
 ### Hybrid path
 
@@ -140,11 +233,11 @@ Ollama evidence inside one aggregation pass.
 4. Read the selected label and normalized probability vector.
 5. Aggregate probability evidence over chunks and apply thresholds.
 
-With the default Ollama engine, option weights are generated by the model,
-normalized by the adapter, and strictly validated by OpenJev. With the legacy
-`llama.cpp` direct engine, the distribution comes from constrained label-token
-logprobs. Both paths return numeric confidence, but their probability sources
-are not equivalent.
+For `openjev_ollama`, option weights are generated by the model, normalized by
+the adapter, and strictly validated by OpenJev. For the native `openjev` and
+`openjev_gemma` routes, the distribution comes from constrained label-token
+log probabilities exposed by `llama.cpp`. Both methods return numeric
+confidence, but their probability sources are not equivalent.
 
 ### Ollama path
 
@@ -181,8 +274,11 @@ Chunk size and overlap are configured in `config/classification.yaml`. Overlap r
 The OpenJev path supports the configured aggregation policies:
 
 - healthcare detection favors the strongest positive evidence across chunks;
-- multiclass caller type and intent combine chunk distributions using confidence-weighted averaging;
-- minimum-confidence rules can mark a decision uncertain.
+- multiclass caller type and intent combine chunk distributions using
+  confidence-powered averaging;
+- the winning aggregate probability is compared with the task threshold; a
+  result below threshold is returned as `unknown` while its `raw_label` remains
+  available for inspection.
 
 ### Categorical aggregation
 
@@ -215,18 +311,40 @@ Representative request:
 
 The response identifies the backend and model and returns one result for every configured task.
 
+### Response contract
+
+Each task result uses one of two evidence shapes:
+
+| Backend evidence | Fields |
+|---|---|
+| Probability distribution | `raw_label`, `label`, `confidence`, `threshold`, `threshold_applied`, `probabilities` |
+| Categorical labels only | `raw_label`, `label`, `confidence: null`, `threshold_applied: false`, `probabilities: null`, `vote_counts` |
+
+Every successful response also contains:
+
+- `transcript_processing`: original and processed character counts, chunk count,
+  `truncated: false`, and reported input tokens;
+- `model`: model name, backend, method, end-to-end latency, backend elapsed time,
+  average chunk time, and the probability source;
+- `model.routing` for hybrid calls, including whether fallback was used and why;
+- optional per-chunk evidence under `debug` when
+  `RETURN_CHUNK_DETAILS=true`.
+
+The `probability_source` field distinguishes native token log probabilities,
+model-generated distributions, mixed evidence, and unavailable probabilities.
+
 ## Processes and ports
 
-| Process | Default port | Needed in Ollama-only mode | Needed in OpenJev mode |
-|---|---:|---:|---:|
-| Streamlit | 8501 | Yes, for browser UI | Yes, for browser UI |
-| FastAPI/Uvicorn | 8000 | Yes | Yes |
-| Ollama | 11434 | Yes | Yes for the default OpenJev engine |
-| OpenJev native | 8090 | No | Yes |
-| OpenJev with Ollama | 8091 | No | Yes when selected or in dual mode |
-| OpenJev native Gemma | 8092 | No | Only in `all` or `gemma.cpp` mode |
-| `llama.cpp` server | 18080 | No | Only for the legacy direct engine |
-| Gemma `llama.cpp` server | 18081 | No | Only for experimental native Gemma |
+| Process | Default port | Used by |
+|---|---:|---|
+| Streamlit | 8501 | Optional browser UI |
+| FastAPI/Uvicorn | 8000 | All application modes |
+| Ollama | 11434 | Direct Ollama, OpenJev-with-Ollama, and hybrid fallback |
+| OpenJev native | 8090 | Native MiniCPM and the first stage of hybrid |
+| OpenJev with Ollama | 8091 | OpenJev generation-mode adapter testing |
+| OpenJev native Gemma | 8092 | Native Gemma E2B or E4B |
+| MiniCPM `llama.cpp` server | 18080 | Native MiniCPM token-logprob decisions |
+| Gemma `llama.cpp` server | 18081 | Native Gemma token-logprob decisions |
 
 The API can be used without Streamlit. The backend model processes remain persistent so model weights are not reloaded for every classification.
 
@@ -242,7 +360,7 @@ consistent prevents a default from pointing to a disabled client. The native
 Gemma-only profile and full installation procedure are documented in
 [README_NATIVE_GEMMA_ONLY.md](README_NATIVE_GEMMA_ONLY.md).
 
-Configuration precedence is conceptually:
+Backend/model selection precedence is conceptually:
 
 ```text
 request override → environment/runtime override → classification.yaml default
@@ -291,6 +409,17 @@ Register it in the backend router and `/models` response, then choose probabilit
 
 ## Privacy and deployment notes
 
-Local URLs keep inference on the laptop, but transcripts still appear in application memory and may appear in logs if verbose logging is enabled. Healthcare or other sensitive data should use restricted host binding, access controls, encrypted storage where applicable, minimal logging, and an organizational retention policy before production use.
+Local URLs keep inference on the laptop, but transcripts still appear in
+application memory and cross boundaries between local processes. Debug logging
+at any layer must be reviewed to prevent accidental content capture. Healthcare
+or other sensitive data should use restricted host binding, access controls,
+encrypted storage where applicable, minimal logging, and an organizational
+retention policy before production use.
+
+The Python API logs transcript length and result metadata, not the raw transcript.
+`LOG_TRANSCRIPTS` is false by default and is reserved for an explicit diagnostic
+implementation. Operators must still audit logs across FastAPI, OpenJev,
+`llama.cpp`, Ollama, the terminal, and any surrounding infrastructure before
+handling sensitive data.
 
 The current application is a local proof of concept. Authentication, authorization, TLS termination, audit logging, rate limiting, and production observability are deployment responsibilities rather than properties of the local launcher.

@@ -1,18 +1,22 @@
 [CmdletBinding()]
 param(
     [switch]$InstallPrerequisites,
-    [string]$ModelDirectory = ''
+    [string]$ModelDirectory = '',
+    [string]$ModelRepository = 'ggml-org/gemma-4-E4B-it-GGUF',
+    [string]$ModelFileName = 'gemma-4-E4B-it-Q4_0.gguf',
+    [string]$ExpectedModelSha256 = 'a555b900214b477d8880e7832e0b8925e139b0159640036b09fe472b6f2097f2',
+    [string]$ModelDisplayName = 'Gemma 4 E4B Instruct Q4_0',
+    [string]$DefaultModelDirectoryName = 'gemma4-e4b',
+    [string]$RunScriptName = 'run-gemma-only.ps1'
 )
 
 $ErrorActionPreference = 'Stop'
 $ProjectRoot = $PSScriptRoot
 $OpenJevRoot = Join-Path $ProjectRoot 'vendor\openjev'
 $ExpectedOpenJevCommit = '65ae076b501b464f0180e43f574ab451bc918e20'
-$ModelFileName = 'gemma-4-E4B-it-Q4_0.gguf'
-$ExpectedModelSha256 = 'a555b900214b477d8880e7832e0b8925e139b0159640036b09fe472b6f2097f2'
 
 if (-not $ModelDirectory) {
-    $ModelDirectory = Join-Path $ProjectRoot 'models\gemma4-e4b'
+    $ModelDirectory = Join-Path $ProjectRoot "models\$DefaultModelDirectoryName"
 }
 $ModelDirectory = [System.IO.Path]::GetFullPath($ModelDirectory)
 $ModelPath = Join-Path $ModelDirectory $ModelFileName
@@ -156,9 +160,9 @@ if (-not (Test-Path -LiteralPath $HfExecutable -PathType Leaf)) {
 }
 New-Item -ItemType Directory -Force -Path $ModelDirectory | Out-Null
 if (-not (Test-Path -LiteralPath $ModelPath -PathType Leaf)) {
-    Write-Host 'Downloading exactly one model file: Gemma 4 E4B Instruct Q4_0...'
+    Write-Host "Downloading exactly one model file: $ModelDisplayName..."
     & $HfExecutable download `
-        'ggml-org/gemma-4-E4B-it-GGUF' `
+        $ModelRepository `
         $ModelFileName `
         --local-dir $ModelDirectory
     if ($LASTEXITCODE -ne 0) { throw 'The Gemma GGUF download failed.' }
@@ -166,15 +170,15 @@ if (-not (Test-Path -LiteralPath $ModelPath -PathType Leaf)) {
     Write-Host 'The Gemma GGUF already exists; the download is being reused.'
 }
 
-Write-Host 'Verifying the 4.59 GB model checksum (this can take a moment)...'
+Write-Host "Verifying the $ModelDisplayName checksum (this can take a moment)..."
 $ActualHash = (Get-FileHash -LiteralPath $ModelPath -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($ActualHash -ne $ExpectedModelSha256) {
     throw "Gemma checksum mismatch. Expected $ExpectedModelSha256 but found $ActualHash."
 }
 
 Write-Host ''
-Write-Host 'Setup complete. Only the native Gemma model was downloaded.' -ForegroundColor Green
+Write-Host "Setup complete. Only the native $ModelDisplayName model was downloaded." -ForegroundColor Green
 Write-Host 'Start the backend:'
-Write-Host '  .\run-gemma-only.ps1'
+Write-Host "  .\$RunScriptName"
 Write-Host 'Then, in a second PowerShell terminal, start the UI:'
 Write-Host '  .\run-ui.ps1'

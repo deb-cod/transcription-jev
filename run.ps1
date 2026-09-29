@@ -5,7 +5,10 @@ param(
     [string]$OpenJevEngine = 'both',
     [string]$OllamaModel = 'gemma4:e4b',
     [string]$NativeGemmaRepo = 'ggml-org/gemma-4-E4B-it-GGUF:Q4_0',
-    [string]$NativeGemmaGguf = ''
+    [string]$NativeGemmaGguf = '',
+    [string]$NativeGemmaModelID = 'gemma4-e4b-native',
+    [string]$NativeGemmaConfig = '',
+    [string]$NativeGemmaDownloadSize = '4.6 GB'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -14,12 +17,15 @@ $OpenJevRoot = Join-Path $ProjectRoot 'vendor\openjev'
 $Python = Join-Path $ProjectRoot 'venv\Scripts\python.exe'
 $Llama = Join-Path $OpenJevRoot 'third_party\llama.cpp\b11056\llama-server.exe'
 $Model = Join-Path $OpenJevRoot 'models\MiniCPM5-2B-Q4_K_M.gguf'
-$GemmaModelID = 'gemma4-e4b-native'
 $Decision = Join-Path $OpenJevRoot 'bin\decision-test.exe'
 $GemmaDecision = Join-Path $OpenJevRoot 'bin\decision-test-gemma.exe'
 $LlamaConfig = Join-Path $OpenJevRoot 'settings\decision-test.yaml'
 $OllamaConfig = Join-Path $OpenJevRoot 'settings\decision-ollama.yaml'
-$GemmaConfig = Join-Path $ProjectRoot 'config\openjev-gemma.yaml'
+if (-not $NativeGemmaConfig) {
+    $NativeGemmaConfig = Join-Path $ProjectRoot 'config\openjev-gemma.yaml'
+} elseif (-not [System.IO.Path]::IsPathRooted($NativeGemmaConfig)) {
+    $NativeGemmaConfig = Join-Path $ProjectRoot $NativeGemmaConfig
+}
 $GemmaModule = Join-Path $OpenJevRoot 'features\decision-test\go.mod'
 $RuntimeLogs = Join-Path $ProjectRoot 'tmp\runtime'
 $UsesLlama = -not $SkipOpenJev -and $OpenJevEngine -in @('all', 'both', 'llama.cpp')
@@ -51,7 +57,7 @@ $RequiredFiles = @($Python)
 if ($UsesLlama -or $UsesOllama) { $RequiredFiles += @($Decision) }
 if ($UsesLlama) { $RequiredFiles += @($Llama, $Model, $LlamaConfig) }
 if ($UsesOllama) { $RequiredFiles += @($OllamaConfig) }
-if ($UsesGemma) { $RequiredFiles += @($Llama, $GemmaConfig, $GemmaModule) }
+if ($UsesGemma) { $RequiredFiles += @($Llama, $NativeGemmaConfig, $GemmaModule) }
 if ($GemmaGgufPath) { $RequiredFiles += @($GemmaGgufPath) }
 foreach ($Required in $RequiredFiles) {
     if (-not (Test-Path -LiteralPath $Required)) {
@@ -151,8 +157,8 @@ try {
             if ($GemmaHealth.status -eq 'ok') {
                 $GemmaModels = Invoke-RestMethod -Uri 'http://127.0.0.1:18081/v1/models' -TimeoutSec 3
                 $RunningModel = $GemmaModels.data | Select-Object -First 1 -ExpandProperty id
-                if ($RunningModel -ne $GemmaModelID) {
-                    throw "Port 18081 has llama.cpp model '$RunningModel', expected '$GemmaModelID'. Stop it before starting native Gemma."
+                if ($RunningModel -ne $NativeGemmaModelID) {
+                    throw "Port 18081 has llama.cpp model '$RunningModel', expected '$NativeGemmaModelID'. Stop it before starting native Gemma."
                 }
                 $GemmaLlamaReady = $true
             }
@@ -166,13 +172,13 @@ try {
                 # line, so an explicit quote is required for paths containing spaces.
                 $GemmaSourceArguments = @('-m', ('"' + $GemmaGgufPath + '"'))
             } else {
-                Write-Host "Starting native Gemma from $NativeGemmaRepo. The first run downloads about 4.6 GB; later runs use the local cache."
+                Write-Host "Starting native Gemma from $NativeGemmaRepo. The first run downloads about $NativeGemmaDownloadSize; later runs use the local cache."
                 $GemmaSourceArguments = @('-hf', $NativeGemmaRepo, '--no-mmproj')
             }
             $GemmaArguments = $GemmaSourceArguments + @(
                 '-c', '2048', '-b', '256', '-ub', '128',
                 '-ngl', 'auto', '--fit', 'on', '--fit-target', '1536', '-np', '1',
-                '--jinja', '--alias', $GemmaModelID,
+                '--jinja', '--alias', $NativeGemmaModelID,
                 '--host', '127.0.0.1', '--port', '18081'
             )
             $GemmaLlamaProcess = Start-Process -FilePath $Llama -ArgumentList $GemmaArguments `
@@ -184,7 +190,7 @@ try {
             $GemmaLoadMilliseconds = ((Get-Date) - $GemmaLoadStarted).TotalMilliseconds
             Write-Host ("llama.cpp Gemma model load: {0:N0} ms" -f $GemmaLoadMilliseconds)
         }
-        $GemmaProcess = Start-OpenJevService $GemmaConfig 8092 'llama.cpp' $GemmaModelID 'openjev-gemma' $GemmaDecision -BuildFromSource
+        $GemmaProcess = Start-OpenJevService $NativeGemmaConfig 8092 'llama.cpp' $NativeGemmaModelID 'openjev-gemma' $GemmaDecision -BuildFromSource
         if ($GemmaProcess) { $OwnedProcesses += $GemmaProcess }
     }
 

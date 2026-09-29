@@ -44,6 +44,9 @@ def classify(payload: ClassifyRequest, request: Request) -> dict[str, Any]:
         labels,
         result["model"]["latency_ms"],
     )
+    print("*********************************************************************")
+    print("result: \n", result)
+    print("*********************************************************************")
     return result
 
 

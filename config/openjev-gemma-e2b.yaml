@@ -1,0 +1,19 @@
+engine: llama.cpp
+api_host: 127.0.0.1
+api_port: 8092
+llama_url: http://127.0.0.1:18081
+llama_host: 127.0.0.1
+llama_port: 18081
+llama_binary: third_party/llama.cpp/b11056/llama-server.exe
+llama_build: b11056
+llama_zip: llama-b11056-bin-win-cuda-12.4-x64.zip
+cudart_zip: cudart-llama-bin-win-cuda-12.4-x64.zip
+# run-gemma-e2b-only.ps1 loads the official llama.cpp-facing GGUF from
+# Hugging Face or an explicit -NativeGemmaGguf. OpenJev requires this metadata
+# field but does not load the file itself.
+model_path: hf://ggml-org/gemma-4-E2B-it-GGUF:Q4_0
+model_id: gemma4-e2b-native
+model_url: ""
+log_path: ""
+workers: 3
+stall_timeout_ms: 120000

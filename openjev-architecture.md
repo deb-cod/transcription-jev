@@ -44,7 +44,7 @@ The project pins OpenJev revision:
 | Python API | 8000 | Converts classification tasks to OpenJev choice questions and aggregates chunk results |
 | OpenJev native | 8090 | Uses `llama.cpp` direct decisions for the fast UI choice |
 | OpenJev with Ollama | 8091 | Uses Ollama generation for the higher-latency UI choice |
-| OpenJev native Gemma | 8092 | Uses Gemma 4 E4B through `llama.cpp` direct decisions |
+| OpenJev native Gemma | 8092 | Uses Gemma 4 E4B by default, or the E2B-only profile, through `llama.cpp` direct decisions |
 | Ollama | 11434 | Default engine; keeps the configured Ollama model loaded and produces structured option weights |
 | `llama.cpp` server | 18080 | Optional legacy engine for direct token-logprob decisions |
 | Gemma `llama.cpp` server | 18081 | Experimental Gemma direct token-logprob engine |

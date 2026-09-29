@@ -1,5 +1,8 @@
 # Native Gemma-only setup
 
+This document describes the Gemma 4 **E4B** profile. For the smaller E2B
+profile, see [README_NATIVE_GEMMA_E2B_ONLY.md](README_NATIVE_GEMMA_E2B_ONLY.md).
+
 This guide installs and runs only this inference path:
 
 ```text

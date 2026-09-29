@@ -161,15 +161,22 @@ commands, use [README_NATIVE_GEMMA_ONLY.md](README_NATIVE_GEMMA_ONLY.md). Its
 `run-gemma-only.ps1` launcher exposes only `openjev_gemma` and does not require
 the MiniCPM model or an Ollama model.
 
+The smaller E2B alternative is documented in
+[README_NATIVE_GEMMA_E2B_ONLY.md](README_NATIVE_GEMMA_E2B_ONLY.md). Run
+`setup-gemma-e2b-only.ps1` and `run-gemma-e2b-only.ps1` to use its 2.84 GB
+Q4_0 GGUF and runtime ID `gemma4-e2b-native`. The two profiles use the same
+ports and backend contract, so they cannot run simultaneously.
+
 Request path:
 
 ```text
 Streamlit → FastAPI → OpenJev on port 8092 → llama.cpp on port 18081
 ```
 
-This backend uses the official `ggml-org/gemma-4-E4B-it-GGUF` Q4_0 model with
-OpenJev's direct token-logprob method. It is a separate service and does not
-replace the fast MiniCPM backend.
+The default profile uses the official `ggml-org/gemma-4-E4B-it-GGUF` Q4_0
+model with OpenJev's direct token-logprob method. The optional E2B profile uses
+`ggml-org/gemma-4-E2B-it-GGUF` through the same method. This is a separate
+service and does not replace the fast MiniCPM backend.
 
 The Ollama `gemma4:e4b` blob cannot be reused directly: it is an
 Ollama-specific multimodal GGUF that upstream `llama.cpp` rejects with a tensor

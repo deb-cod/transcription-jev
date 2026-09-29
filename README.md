@@ -2,6 +2,7 @@
 
 ## Documentation map
 
+- [README_NATIVE_GEMMA_E2B_ONLY.md](README_NATIVE_GEMMA_E2B_ONLY.md) — install and run the smaller Gemma 4 E2B Q4_0 GGUF with native OpenJev
 - [README_NATIVE_OPENJEV_ONLY.md](README_NATIVE_OPENJEV_ONLY.md) — install and expose only the fast MiniCPM-backed native OpenJev backend
 - [README_NATIVE_GEMMA_ONLY.md](README_NATIVE_GEMMA_ONLY.md) — complete one-model installation and runtime profile that exposes only native Gemma
 - [README_BEFORE_OLLAMA.md](README_BEFORE_OLLAMA.md) — original OpenJev-only installation and run procedure
@@ -89,6 +90,18 @@ Set-ExecutionPolicy -Scope Process Bypass
 ```
 
 Start `.\run-ui.ps1` in a second terminal after the backend is ready.
+
+For the smaller Gemma 4 E2B model, use the dedicated setup and launcher:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\setup-gemma-e2b-only.ps1 -InstallPrerequisites
+.\run-gemma-e2b-only.ps1
+```
+
+See [README_NATIVE_GEMMA_E2B_ONLY.md](README_NATIVE_GEMMA_E2B_ONLY.md) for the
+artifact checksum, manual setup, runtime model ID, verification, and switching
+instructions.
 
 Validate the machine in PowerShell:
 

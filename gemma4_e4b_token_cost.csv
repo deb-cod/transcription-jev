@@ -1,0 +1,13 @@
+Measurement,Value,Formula / note
+Latency (s),4.914,Measured OpenJev native Gemma 4 E4B latency
+Power draw (W),100,Assumed local system draw while processing
+Electricity price ($/kWh),0.15,Illustrative local tariff
+Energy per question (kWh),0.0001365,"watts × latency_seconds / 3,600,000"
+Cost per question ($),2.047e-05,energy_per_question × electricity_price
+Cost per 250 tokens ($),8.19e-08,Example: 250 tokens/request
+Cost per 500 tokens ($),4.09e-08,Example: 500 tokens/request
+"Cost per 1,000 tokens ($)",2.05e-08,"Example: 1,000 tokens/request"
+"Cost per 2,000 tokens ($)",1.02e-08,"Example: 2,000 tokens/request"
+"Cost per 5,000 tokens ($)",4.1e-09,"Example: 5,000 tokens/request"
+"Cost per 10,000 tokens ($)",2e-09,"Example: 10,000 tokens/request"
+Notes,Local inference has no cloud API fee. These are electricity-only estimates.,"Not a billing quote; excludes startup, downloads, hardware, and maintenance."
